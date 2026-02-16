@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Basic CSS test without tailwind directives to isolate 500 crash */
+.test-class {
+    color: white;
+}

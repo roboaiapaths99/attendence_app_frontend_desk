@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OfficeFlow Registration Simulator</title>
+    <style>
+        body { font-family: sans-serif; max-width: 500px; margin: 2rem auto; padding: 1rem; background: #f0f2f5; }
+        .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { margin-top: 0; color: #1a1a1a; }
+        .input-group { margin-bottom: 1rem; }
+        label { display: block; margin-bottom: 0.5rem; color: #4a5568; }
+        input { width: 100%; padding: 0.5rem; border: 1px solid #cbd5e0; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 0.75rem; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
+        button:hover { background: #2563eb; }
+        button:disabled { background: #93c5fd; cursor: not-allowed; }
+        #status { margin-top: 1rem; padding: 1rem; border-radius: 4px; display: none; }
+        .error { background: #fee2e2; color: #b91c1c; }
+        .success { background: #dcfce7; color: #15803d; }
+        #camera-preview { width: 100%; height: 300px; background: #000; margin-bottom: 1rem; display: flex; align-items: center; justify-content: center; color: white; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>OfficeFlow Registration</h1>
+        <p style="color: #666; margin-bottom: 1.5rem;">Simulator running on your PC</p>
+        
+        <div id="camera-preview">
+            <span id="camera-status">Checking camera...</span>
+            <video id="video" style="width: 100%; height: 100%; object-fit: cover; display: none;" autoplay playsinline></video>
+            <canvas id="canvas" style="display: none;"></canvas>
+            <img id="photo-preview" style="width: 100%; height: 100%; object-fit: cover; display: none;" />
+        </div>
+        
+        <button id="capture-btn" type="button" style="margin-bottom: 1rem; background: #4b5563;">Capture Photo</button>
+
+        <form id="reg-form">
+            <div class="input-group">
+                <label>Full Name</label>
+                <input type="text" id="fullname" value="Simulator User" required>
+            </div>
+            <div class="input-group">
+                <label>Email</label>
+                <input type="email" id="email" value="sim@test.com" required>
+            </div>
+            <div class="input-group">
+                <label>Employee ID</label>
+                <input type="text" id="empid" value="SIM001" required>
+            </div>
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" id="password" value="password123" required>
+            </div>
+            <button type="submit" id="submit-btn" disabled>Register</button>
+        </form>
+
+        <div id="status"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8001';
+        let faceImage = null;
+        
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const video = document.getElementById('video');
+                video.srcObject = stream;
+                video.style.display = 'block';
+                document.getElementById('camera-status').style.display = 'none';
+            } catch (e) {
+                document.getElementById('camera-status').textContent = 'Camera needed for registration. Please allow access.';
+            }
+        }
+
+        document.getElementById('capture-btn').addEventListener('click', () => {
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const photoPreview = document.getElementById('photo-preview');
+            
+            if (video.style.display === 'none') {
+                // Reset to camera mode
+                photoPreview.style.display = 'none';
+                video.style.display = 'block';
+                document.getElementById('capture-btn').textContent = 'Capture Photo';
+                document.getElementById('submit-btn').disabled = true;
+                faceImage = null;
+                return;
+            }
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            
+            faceImage = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+            photoPreview.src = canvas.toDataURL('image/jpeg');
+            
+            video.style.display = 'none';
+            photoPreview.style.display = 'block';
+            document.getElementById('capture-btn').textContent = 'Retake Photo';
+            document.getElementById('submit-btn').disabled = false;
+        });
+
+        document.getElementById('reg-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('submit-btn');
+            const status = document.getElementById('status');
+            
+            if (!faceImage) {
+                alert('Please capture a photo first');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Registering...';
+            status.style.display = 'none';
+
+            try {
+                const payload = {
+                    full_name: document.getElementById('fullname').value,
+                    email: document.getElementById('email').value,
+                    employee_id: document.getElementById('empid').value,
+                    password: document.getElementById('password').value,
+                    face_image: faceImage
+                };
+
+                const res = await fetch(`${API_URL}/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) throw new Error(data.detail || 'Registration failed');
+
+                status.className = 'success';
+                status.textContent = '✅ SUCCESS: Registration works! You can now use the mobile app.';
+                status.style.display = 'block';
+            } catch (err) {
+                status.className = 'error';
+                status.textContent = '❌ ERROR: ' + err.message;
+                status.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Register';
+            }
+        });
+
+        initCamera();
+    </script>
+</body>
+</html>
