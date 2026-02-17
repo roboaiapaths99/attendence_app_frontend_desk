@@ -1,4 +1,5 @@
-import { View, Text, TouchableOpacity, Alert, ActivityIndicator, StyleSheet, Animated, Platform, Dimensions } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, Alert, ActivityIndicator, StyleSheet, Animated, Platform, Dimensions, StatusBar } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Application from 'expo-application';
 import { Scan, XCircle, MapPin, Wifi, ShieldCheck, Eye, Smile } from 'lucide-react-native';
@@ -8,7 +9,7 @@ import { theme } from '../utils/theme';
 import { smartAttendance, updateFace } from '../utils/api';
 import { getFriendlyErrorMessage } from '../utils/errorUtils';
 import * as Haptics from 'expo-haptics';
-import AnimatedRe, {
+import Animated, {
     useSharedValue,
     useAnimatedStyle,
     withRepeat,
@@ -26,27 +27,40 @@ const AttendanceScanScreen = ({ route, navigation }) => {
     const [liveWifiInfo, setLiveWifiInfo] = useState(wifiInfo);
     const [livenessState, setLivenessState] = useState('idle'); // idle -> checking -> ready
     const [livenessProgress, setLivenessProgress] = useState(0);
+    const [scanStatus, setScanStatus] = useState(null); // 'success', 'error', or null
 
-    // Pulse Animation for Ring
     const pulse = useSharedValue(0);
+    const scanLine = useSharedValue(0);
+
     useEffect(() => {
         pulse.value = withRepeat(
             withTiming(1, { duration: 2000 }),
             -1,
             false
         );
+        scanLine.value = withRepeat(
+            withTiming(1, { duration: 3000 }),
+            -1,
+            true
+        );
     }, []);
 
     const animatedRingStyle = useAnimatedStyle(() => {
         return {
-            transform: [{ scale: interpolate(pulse.value, [0, 1], [1, 1.2]) }],
-            opacity: interpolate(pulse.value, [0, 1], [0.8, 0]),
-            borderColor: '#6366f1',
+            transform: [{ scale: interpolate(pulse.value, [0, 1], [1, 1.15]) }],
+            opacity: interpolate(pulse.value, [0, 1], [0.6, 0]),
+            borderColor: scanStatus === 'success' ? '#10b981' : scanStatus === 'error' ? '#f43f5e' : '#6366f1',
+        };
+    });
+
+    const animatedScanLineStyle = useAnimatedStyle(() => {
+        return {
+            top: interpolate(scanLine.value, [0, 1], [0, RING_SIZE]),
+            backgroundColor: scanStatus === 'error' ? '#f43f5e' : '#6366f1',
         };
     });
     const [permission, requestPermission] = useCameraPermissions();
     const [isCameraReady, setIsCameraReady] = useState(false);
-    const [readableAddress, setReadableAddress] = useState('Locating...');
     const cameraRef = useRef(null);
 
     useEffect(() => {
@@ -203,15 +217,21 @@ const AttendanceScanScreen = ({ route, navigation }) => {
                 );
 
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                Alert.alert(
-                    `${result.type === 'check-in' ? '✨ Welcome Aboard!' : '👋 See You Soon!'}`,
-                    `${result.type === 'check-in' ? 'Check-in' : 'Check-out'} successful for ${result.user}.\n(WiFi Quality: ${result.wifi_quality})`,
-                    [{ text: "Great!", onPress: () => navigation.navigate('Home', { email }) }]
-                );
+                setScanStatus('success');
+                setTimeout(() => {
+                    Alert.alert(
+                        `${result.type === 'check-in' ? '✨ Welcome Aboard!' : '👋 See You Soon!'}`,
+                        `${result.type === 'check-in' ? 'Check-in' : 'Check-out'} successful for ${result.user}.\n(WiFi Quality: ${result.wifi_quality})`,
+                        [{ text: "Great!", onPress: () => navigation.navigate('Home', { email }) }]
+                    );
+                }, 500);
             } catch (e) {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                setScanStatus('error');
                 const msg = getFriendlyErrorMessage(e, "Attendance verification failed.");
-                Alert.alert("Attendance Notice", msg);
+                setTimeout(() => {
+                    Alert.alert("Attendance Notice", msg, [{ text: "Retry", onPress: () => setScanStatus(null) }]);
+                }, 500);
             } finally {
                 setIsVerifying(false);
             }
@@ -256,6 +276,7 @@ const AttendanceScanScreen = ({ route, navigation }) => {
 
     return (
         <View style={styles.container}>
+            <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
             <CameraView
                 ref={cameraRef}
                 style={styles.camera}
@@ -280,16 +301,18 @@ const AttendanceScanScreen = ({ route, navigation }) => {
                     </View>
 
                     <View style={styles.ringWrapper}>
-                        <AnimatedRe.View style={[styles.pulseRing, animatedRingStyle]} />
-                        <View style={styles.ringOuter}>
-                            <View style={styles.ringInner} />
+                        <Animated.View style={[styles.pulseRing, animatedRingStyle]} />
+                        <View style={[styles.ringOuter, scanStatus && { borderColor: scanStatus === 'success' ? '#10b981' : '#f43f5e' }]}>
+                            <Animated.View style={[styles.scanLine, animatedScanLineStyle]} />
+                            <View style={[styles.ringInner, scanStatus && { borderColor: scanStatus === 'success' ? '#10b981' : '#f43f5e', opacity: 1 }]} />
                         </View>
                     </View>
 
-                    <Text style={styles.instruction}>
-                        {livenessState !== 'ready'
-                            ? "Please Blink to Verify Liveness"
-                            : isVerifying ? "Verifying..." : "Ready to Capture"}
+                    <Text style={[styles.instruction, scanStatus === 'success' && styles.successBg, scanStatus === 'error' && styles.errorBg]}>
+                        {scanStatus === 'success' ? "VERIFIED SUCCESS"
+                            : scanStatus === 'error' ? "VERIFICATION FAILED"
+                                : livenessState !== 'ready' ? "Blink to Verify Liveness"
+                                    : isVerifying ? "Verifying Face..." : "Processing captured shift..."}
                     </Text>
                 </View>
 
@@ -483,29 +506,53 @@ const styles = StyleSheet.create({
         borderWidth: 2,
         borderColor: 'rgba(99, 102, 241, 0.4)',
         borderRadius: RING_SIZE / 2,
-        borderStyle: 'dashed',
         alignItems: 'center',
         justifyContent: 'center',
+        overflow: 'hidden',
+    },
+    scanLine: {
+        position: 'absolute',
+        width: '100%',
+        height: 2,
+        shadowColor: '#6366f1',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.8,
+        shadowRadius: 10,
+        elevation: 10,
+        zIndex: 10,
     },
     ringInner: {
-        width: RING_SIZE * 0.85,
-        height: RING_SIZE * 0.85,
-        borderWidth: 4,
-        borderColor: '#10b981',
-        borderRadius: (RING_SIZE * 0.85) / 2,
+        width: RING_SIZE * 0.9,
+        height: RING_SIZE * 0.9,
+        borderWidth: 3,
+        borderColor: '#6366f1',
+        borderRadius: (RING_SIZE * 0.9) / 2,
         alignItems: 'center',
         justifyContent: 'center',
-        opacity: 0.4,
+        opacity: 0.2,
     },
     instruction: {
         color: 'white',
-        fontWeight: 'bold',
-        fontSize: 18,
+        fontWeight: '900',
+        fontSize: 16,
         marginTop: 40,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: 'rgba(15, 23, 42, 0.8)',
         paddingHorizontal: 24,
-        paddingVertical: 8,
-        borderRadius: 99,
+        paddingVertical: 12,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+        overflow: 'hidden',
+        textAlign: 'center',
+        letterSpacing: 1,
+    },
+    successBg: {
+        backgroundColor: 'rgba(16, 185, 129, 0.9)',
+        borderColor: '#10b981',
+    },
+    errorBg: {
+        backgroundColor: 'rgba(244, 63, 94, 0.9)',
+        borderColor: '#f43f5e',
     },
     controls: {
         padding: 40,
