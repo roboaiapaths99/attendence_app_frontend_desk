@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, TextInput, ActivityIndicator, Image } from 'react-native';
 import GlassCard from '../components/GlassCard';
 import { User, Mail, Shield, ChevronRight, LogOut, ArrowLeft, Award, Settings, Lock } from 'lucide-react-native';
 import { theme } from '../utils/theme';
@@ -76,7 +76,14 @@ const ProfileScreen = ({ route, navigation }) => {
             <View style={styles.profileHero}>
                 <View style={styles.avatarContainer}>
                     <View style={styles.avatarInner}>
-                        <User size={60} color="white" strokeWidth={1.5} />
+                        {user?.profile_image ? (
+                            <Image
+                                source={{ uri: `data:image/jpeg;base64,${user.profile_image}` }}
+                                style={styles.avatarImage}
+                            />
+                        ) : (
+                            <User size={60} color="white" strokeWidth={1.5} />
+                        )}
                     </View>
                     <View style={styles.badgeContainer}>
                         <Shield size={16} color="white" />
@@ -148,7 +155,20 @@ const ProfileScreen = ({ route, navigation }) => {
 
             <TouchableOpacity
                 style={styles.logoutButton}
-                onPress={() => navigation.navigate('Login')}
+                onPress={async () => {
+                    try {
+                        // Wipe all session data
+                        await Promise.all([
+                            SecureStore.deleteItemAsync('userEmail'),
+                            SecureStore.deleteItemAsync('userPassword'),
+                            SecureStore.deleteItemAsync('userData')
+                        ]);
+                        navigation.navigate('Login');
+                    } catch (e) {
+                        console.error("[Profile] Logout failed", e);
+                        navigation.navigate('Login'); // Fallback
+                    }
+                }}
             >
                 <LogOut size={20} color="#f43f5e" />
                 <Text style={styles.logoutText}>Logout from Device</Text>
@@ -268,6 +288,11 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         borderWidth: 3,
         borderColor: '#0f172a',
+    },
+    avatarImage: {
+        width: '100%',
+        height: '100%',
+        resizeMode: 'cover',
     },
     userName: {
         color: 'white',

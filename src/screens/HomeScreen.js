@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, StyleSheet, Dimensions, Image } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import GlassCard from '../components/GlassCard';
 import { theme } from '../utils/theme';
 import { getAnalytics } from '../utils/api';
@@ -9,7 +10,8 @@ import * as SecureStore from 'expo-secure-store';
 import NetInfo from '@react-native-community/netinfo';
 import Svg, { Circle, Text as SvgText } from 'react-native-svg';
 import { Scan, Wifi, MapPin, History, LogOut, TrendingUp, User, Clock as ClockIcon, RefreshCcw } from 'lucide-react-native';
-import Animated, {
+import * as Reanimated from 'react-native-reanimated';
+const {
     FadeInUp,
     FadeInDown,
     Layout,
@@ -17,8 +19,10 @@ import Animated, {
     useAnimatedStyle,
     withSpring,
     withSequence,
-    withTiming
-} from 'react-native-reanimated';
+    withTiming,
+    withRepeat
+} = Reanimated;
+const Animated = Reanimated.default || Reanimated;
 
 const { width } = Dimensions.get('window');
 
@@ -72,13 +76,74 @@ const HomeScreen = ({ route, navigation }) => {
     });
     const [loadingAnalytics, setLoadingAnalytics] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [readableAddress, setReadableAddress] = useState('Locating...');
+
+    const isFocused = useIsFocused();
 
     // Animation values
     const refreshRotation = useSharedValue(0);
+    const activePulse = useSharedValue(1);
 
+    // 1. Handle Pulse Animation on Mount
+    useEffect(() => {
+        activePulse.value = withRepeat(
+            withSequence(
+                withTiming(1.05, { duration: 1000 }),
+                withTiming(1, { duration: 1000 })
+            ),
+            -1,
+            true
+        );
+    }, []);
+
+    // 2. Refresh Device State (WiFi/GPS)
+    const refreshDeviceState = async () => {
+        try {
+            // Get WiFi Info
+            const state = await NetInfo.fetch();
+            if (state.type === 'wifi' && state.isConnected) {
+                setWifiConnected(true);
+                setWifiInfo({
+                    ssid: state.details.ssid || 'CONNECTED',
+                    bssid: state.details.bssid || '',
+                    strength: state.details.strength || -50
+                });
+            } else {
+                setWifiConnected(false);
+            }
+
+            // Get Location
+            let { status } = await Location.requestForegroundPermissionsAsync();
+            if (status === 'granted') {
+                let loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+                setLocation(loc);
+
+                const reverse = await Location.reverseGeocodeAsync({
+                    latitude: loc.coords.latitude,
+                    longitude: loc.coords.longitude
+                });
+                if (reverse && reverse.length > 0) {
+                    const item = reverse[0];
+                    const locName = item.name || item.street || item.district || item.city || 'Verified Zone';
+                    setReadableAddress(locName);
+                }
+            }
+        } catch (err) {
+            console.log("[Home] Device state refresh failed", err);
+        }
+    };
+
+    // 3. Main Data Fetch & Focus Refresh
+    useEffect(() => {
+        if (isFocused) {
+            fetchStats();
+            refreshDeviceState();
+        }
+    }, [isFocused]);
+
+    // Initial Load for User Data
     useEffect(() => {
         (async () => {
-            // Fetch User Details if missing from route (for auto-login)
             if (!user) {
                 try {
                     const savedUser = await SecureStore.getItemAsync('userData');
@@ -87,31 +152,6 @@ const HomeScreen = ({ route, navigation }) => {
                     console.log("[Home] Failed to load saved user", e);
                 }
             }
-            let { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert('Permission Denied', 'Location permission is required for attendance & WiFi verification.');
-                return;
-            }
-
-            // Get Location
-            let loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-            setLocation(loc);
-
-            // Get WiFi Info
-            const state = await NetInfo.fetch();
-            if (state.type === 'wifi' && state.isConnected) {
-                setWifiConnected(true);
-                setWifiInfo({
-                    ssid: state.details.ssid || '',
-                    bssid: state.details.bssid || '',
-                    strength: state.details.strength || -50
-                });
-            } else {
-                setWifiConnected(false);
-            }
-
-            // Fetch Analytics
-            fetchStats();
         })();
     }, []);
 
@@ -143,20 +183,35 @@ const HomeScreen = ({ route, navigation }) => {
         };
     });
 
-    const isOfficeWiFi = wifiConnected && wifiInfo.ssid === "Airtel_rash_1093";
+    const animatedActiveButtonStyle = useAnimatedStyle(() => {
+        return {
+            transform: [{ scale: activePulse.value }]
+        };
+    });
+
+    const OFFICE_SSID = analytics?.office_wifi_ssid || "";
+    // If OFFICE_SSID is set, require a match. If not set, allow any WiFi for testing.
+    const isOfficeWiFi = wifiConnected && (OFFICE_SSID === "" || wifiInfo.ssid === OFFICE_SSID);
 
     const handleScanPress = (type) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        const OFFICE_SSID = "Airtel_rash_1093";
 
-        if (!isOfficeWiFi) {
+        if (!isOfficeWiFi && OFFICE_SSID !== "") {
             Alert.alert(
-                "WiFi Required",
-                `Please connect to the office WiFi (${OFFICE_SSID}) to perform check-in/out.`
+                "Unverified Network",
+                `You are connected to "${wifiInfo.ssid || 'Unknown WiFi'}".\n\nOfficial Office WiFi is "${OFFICE_SSID}".\n\nProgess? verification may fail on the server.`,
+                [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Continue Anyway", onPress: () => navigateToScan(type) }
+                ]
             );
             return;
         }
 
+        navigateToScan(type);
+    };
+
+    const navigateToScan = (type) => {
         navigation.navigate('AttendanceScan', {
             location,
             wifiInfo: {
@@ -180,7 +235,14 @@ const HomeScreen = ({ route, navigation }) => {
                     }}
                 >
                     <View style={styles.avatarMini}>
-                        <User size={18} color="white" />
+                        {user?.profile_image ? (
+                            <Image
+                                source={{ uri: `data:image/jpeg;base64,${user.profile_image}` }}
+                                style={styles.avatarImageMini}
+                            />
+                        ) : (
+                            <User size={18} color="white" />
+                        )}
                     </View>
                     <View>
                         <Text style={styles.greeting}>Welcome Back,</Text>
@@ -219,12 +281,12 @@ const HomeScreen = ({ route, navigation }) => {
                     style={styles.statCardWrapper}
                 >
                     <GlassCard style={styles.statCard}>
-                        <View style={[styles.iconBox, { backgroundColor: wifiConnected ? 'rgba(16, 185, 129, 0.1)' : 'rgba(244, 63, 94, 0.1)' }]}>
-                            <Wifi size={24} color={wifiConnected ? "#10b981" : "#f43f5e"} />
+                        <View style={[styles.iconBox, { backgroundColor: isOfficeWiFi ? 'rgba(16, 185, 129, 0.2)' : 'rgba(244, 63, 94, 0.2)' }]}>
+                            <Wifi size={24} color={isOfficeWiFi ? "#10b981" : "#f43f5e"} />
                         </View>
-                        <Text style={styles.statTitle}>WiFi Status</Text>
-                        <Text style={[styles.statSubtitle, { color: wifiConnected ? '#10b981' : '#f43f5e' }]}>
-                            {wifiConnected ? (wifiInfo.ssid || 'Connected') : 'Disconnected'}
+                        <Text style={styles.statTitle}>OFFICE WIFI</Text>
+                        <Text style={[styles.statHighlight, { color: isOfficeWiFi ? '#10b981' : '#f43f5e' }]} numberOfLines={1}>
+                            {wifiConnected ? (wifiInfo.ssid || 'CONNECTED') : 'OFFLINE'}
                         </Text>
                     </GlassCard>
                 </Animated.View>
@@ -234,12 +296,12 @@ const HomeScreen = ({ route, navigation }) => {
                     style={styles.statCardWrapper}
                 >
                     <GlassCard style={styles.statCard}>
-                        <View style={[styles.iconBox, { backgroundColor: location ? 'rgba(59, 130, 246, 0.1)' : 'rgba(244, 63, 94, 0.1)' }]}>
-                            <MapPin size={24} color={location ? "#3b82f6" : "#f43f5e"} />
+                        <View style={[styles.iconBox, { backgroundColor: location ? 'rgba(16, 185, 129, 0.2)' : 'rgba(244, 63, 94, 0.2)' }]}>
+                            <MapPin size={24} color={location ? "#10b981" : "#f43f5e"} />
                         </View>
-                        <Text style={styles.statTitle}>GPS Ready</Text>
-                        <Text style={[styles.statSubtitle, { color: location ? '#3b82f6' : '#f43f5e' }]}>
-                            {location ? 'Active' : 'Searching...'}
+                        <Text style={styles.statTitle}>GPS LOCATION</Text>
+                        <Text style={[styles.statHighlight, { color: location ? '#10b981' : '#f43f5e' }]} numberOfLines={1}>
+                            {location ? readableAddress : 'SEARCHING...'}
                         </Text>
                     </GlassCard>
                 </Animated.View>
@@ -275,79 +337,61 @@ const HomeScreen = ({ route, navigation }) => {
                     </GlassCard>
                 </Animated.View>
 
-                <Animated.View entering={FadeInUp.delay(400).duration(700)}>
-                    <GlassCard style={styles.analyticsCard}>
-                        <View style={styles.analyticsHeader}>
-                            <View style={styles.headerTitleRow}>
-                                <TrendingUp size={18} color="#10b981" />
-                                <Text style={styles.analyticsTitle}>WEEKLY TOTAL</Text>
-                            </View>
-                            <Text style={styles.goalText}>This Week</Text>
-                        </View>
-                        <View style={styles.analyticsContent}>
-                            <View style={styles.weeklyValueContainer}>
-                                <Text style={styles.weeklyValue}>{analytics.week_total.toFixed(1)}</Text>
-                                <Text style={styles.weeklyLabel}>TOTAL HOURS</Text>
-                            </View>
-                            <View style={styles.miniChartContainer}>
-                                <View style={styles.miniChart}>
-                                    {Object.values(analytics.daily_breakdown).slice(-7).map((h, i) => (
-                                        <View
-                                            key={i}
-                                            style={[
-                                                styles.chartBar,
-                                                {
-                                                    height: Math.max(4, (h / 12) * 50),
-                                                    backgroundColor: h >= 8 ? '#10b981' : 'rgba(16, 185, 129, 0.3)'
-                                                }
-                                            ]}
-                                        />
-                                    ))}
-                                </View>
-                                <Text style={styles.chartLabel}>Last 7 Days</Text>
-                            </View>
-                        </View>
-                    </GlassCard>
-                </Animated.View>
             </View>
 
             <Animated.View entering={FadeInDown.delay(500).duration(800)} style={styles.centerSection}>
                 <View style={styles.buttonRow}>
-                    <TouchableOpacity
-                        style={[
-                            styles.actionButton,
-                            styles.checkInButton,
-                            (analytics.current_status === 'check-in' || !isOfficeWiFi) && styles.disabledButton
-                        ]}
-                        onPress={() => handleScanPress('check-in')}
-                        disabled={analytics.current_status === 'check-in'}
-                    >
-                        <Scan size={32} color="white" />
-                        <Text style={styles.actionButtonText}>CHECK IN</Text>
-                        {!isOfficeWiFi ? (
-                            <Text style={styles.lockText}>OFFICE ONLY</Text>
-                        ) : analytics.current_status === 'check-in' && (
-                            <Text style={styles.lockText}>ALREADY IN</Text>
-                        )}
-                    </TouchableOpacity>
+                    <Animated.View style={[styles.actionButtonWrapper, analytics.current_status === 'check-out' && isOfficeWiFi && animatedActiveButtonStyle]}>
+                        <TouchableOpacity
+                            style={[
+                                styles.actionButton,
+                                styles.checkInButton,
+                                (analytics.current_status === 'check-in' || !isOfficeWiFi) && styles.disabledButton
+                            ]}
+                            onPress={() => handleScanPress('check-in')}
+                            disabled={analytics.current_status === 'check-in'}
+                        >
+                            <View style={styles.actionIconContainer}>
+                                <Scan size={32} color="white" />
+                            </View>
+                            <Text style={styles.actionButtonText}>CHECK IN</Text>
+                            <View style={styles.statusIndicator}>
+                                {!isOfficeWiFi ? (
+                                    <Text style={styles.lockText}>OFFICE WIFI ONLY</Text>
+                                ) : analytics.current_status === 'check-in' ? (
+                                    <Text style={styles.lockText}>ALREADY IN</Text>
+                                ) : (
+                                    <Text style={styles.activeText}>READY</Text>
+                                )}
+                            </View>
+                        </TouchableOpacity>
+                    </Animated.View>
 
-                    <TouchableOpacity
-                        style={[
-                            styles.actionButton,
-                            styles.checkOutButton,
-                            (analytics.current_status === 'check-out' || !isOfficeWiFi) && styles.disabledButton
-                        ]}
-                        onPress={() => handleScanPress('check-out')}
-                        disabled={analytics.current_status === 'check-out'}
-                    >
-                        <LogOut size={32} color="white" />
-                        <Text style={styles.actionButtonText}>CHECK OUT</Text>
-                        {!isOfficeWiFi ? (
-                            <Text style={styles.lockText}>OFFICE ONLY</Text>
-                        ) : analytics.current_status === 'check-out' && (
-                            <Text style={styles.lockText}>ALREADY OUT</Text>
-                        )}
-                    </TouchableOpacity>
+                    <Animated.View style={[styles.actionButtonWrapper, analytics.current_status === 'check-in' && isOfficeWiFi && animatedActiveButtonStyle]}>
+                        <TouchableOpacity
+                            style={[
+                                styles.actionButton,
+                                styles.checkOutButton,
+                                (analytics.current_status === 'check-out' || !isOfficeWiFi) && styles.disabledButton
+                            ]}
+                            onPress={() => handleScanPress('check-out')}
+                            disabled={analytics.current_status === 'check-out'}
+                        >
+                            <View style={styles.actionIconContainer}>
+                                <LogOut size={32} color="white" />
+                            </View>
+                            <Text style={styles.actionButtonText}>CHECK OUT</Text>
+                            <View style={styles.statusIndicator}>
+                                {!isOfficeWiFi ? (
+                                    <Text style={styles.lockText}>OFFICE WIFI ONLY</Text>
+                                ) : analytics.current_status === 'check-out' ? (
+                                    <Text style={styles.lockText}>ALREADY OUT</Text>
+                                ) : (
+                                    <Text style={styles.activeText}>READY</Text>
+                                )}
+                            </View>
+                        </TouchableOpacity>
+                    </Animated.View>
                 </View>
             </Animated.View>
 
@@ -403,10 +447,16 @@ const styles = StyleSheet.create({
         backgroundColor: '#6366f1',
         alignItems: 'center',
         justifyContent: 'center',
+        overflow: 'hidden', // Added to contain the image
         shadowColor: '#6366f1',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
+    },
+    avatarImageMini: {
+        width: '100%',
+        height: '100%',
+        resizeMode: 'cover',
     },
     greeting: {
         color: 'white',
@@ -454,82 +504,26 @@ const styles = StyleSheet.create({
     iconBox: {
         padding: 12,
         borderRadius: 16,
-        marginBottom: 12,
+        marginBottom: 10,
     },
     statTitle: {
-        color: 'white',
-        fontSize: 14,
-        fontWeight: '700',
-    },
-    statSubtitle: {
-        fontSize: 12,
-        marginTop: 4,
-        fontWeight: '500',
-    },
-    centerSection: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 20,
-    },
-    buttonRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        width: '100%',
-        gap: 16,
-    },
-    actionButton: {
-        flex: 1,
-        height: 160,
-        borderRadius: 32,
-        alignItems: 'center',
-        justifyContent: 'center',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.3,
-        shadowRadius: 20,
-        elevation: 15,
-    },
-    checkInButton: {
-        backgroundColor: '#6366f1',
-        shadowColor: '#6366f1',
-    },
-    checkOutButton: {
-        backgroundColor: '#f43f5e',
-        shadowColor: '#f43f5e',
-    },
-    actionButtonText: {
-        color: 'white',
-        fontWeight: '900',
-        fontSize: 16,
-        marginTop: 12,
+        color: '#94a3b8',
+        fontSize: 11,
+        fontWeight: '800',
         letterSpacing: 1,
     },
-    historyButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(30, 41, 59, 0.5)',
-        paddingVertical: 20,
-        borderRadius: 24,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.05)',
-        marginBottom: 32,
-    },
-    historyText: {
-        color: '#94a3b8',
-        fontWeight: '700',
-        fontSize: 15,
-        marginLeft: 12,
+    statHighlight: {
+        fontSize: 14,
+        marginTop: 4,
+        fontWeight: '900',
         letterSpacing: 0.5,
     },
     analyticsSection: {
-        flexDirection: 'column',
-        gap: 16,
-        marginBottom: 32,
+        marginBottom: 24,
     },
     analyticsCard: {
-        padding: 20,
-        borderRadius: 24,
+        padding: 24,
+        borderRadius: 28,
     },
     analyticsHeader: {
         flexDirection: 'row',
@@ -540,13 +534,13 @@ const styles = StyleSheet.create({
     headerTitleRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
+        gap: 10,
     },
     analyticsTitle: {
         color: '#94a3b8',
-        fontSize: 12,
+        fontSize: 13,
         fontWeight: '800',
-        letterSpacing: 1,
+        letterSpacing: 1.5,
     },
     analyticsContent: {
         flexDirection: 'row',
@@ -560,7 +554,7 @@ const styles = StyleSheet.create({
     },
     hoursValue: {
         color: 'white',
-        fontSize: width > 380 ? 32 : 28,
+        fontSize: width > 380 ? 38 : 32,
         fontWeight: '900',
     },
     hoursUnit: {
@@ -570,28 +564,27 @@ const styles = StyleSheet.create({
     },
     hoursLabel: {
         color: '#64748b',
-        fontSize: 10,
-        fontWeight: '800',
-        marginTop: -4,
-        letterSpacing: 1,
+        fontSize: 12,
+        fontWeight: '700',
+        marginTop: 4,
     },
     goalText: {
         color: '#6366f1',
         fontSize: 11,
-        fontWeight: '700',
+        fontWeight: '800',
         backgroundColor: 'rgba(99, 102, 241, 0.1)',
-        paddingHorizontal: 10,
+        paddingHorizontal: 12,
         paddingVertical: 4,
         borderRadius: 12,
     },
     statusBadge: {
-        marginTop: 12,
-        paddingHorizontal: 10,
+        marginTop: 16,
+        paddingHorizontal: 12,
         paddingVertical: 6,
-        borderRadius: 10,
+        borderRadius: 12,
     },
     statusBadgeText: {
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: '800',
         letterSpacing: 0.5,
     },
@@ -630,21 +623,95 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         marginTop: 8,
     },
-    disabledButton: {
-        opacity: 0.5,
-        backgroundColor: '#1e293b',
-        borderColor: 'rgba(255,255,255,0.05)',
+    centerSection: {
+        marginVertical: 10,
+    },
+    buttonRow: {
+        flexDirection: 'row',
+        gap: 16,
+    },
+    actionButtonWrapper: {
+        flex: 1,
+    },
+    actionButton: {
+        height: 190,
+        borderRadius: 36,
+        padding: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
         borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.05)',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.3,
+        shadowRadius: 20,
+        elevation: 15,
+    },
+    checkInButton: {
+        backgroundColor: '#6366f1',
+        shadowColor: '#6366f1',
+    },
+    checkOutButton: {
+        backgroundColor: '#f43f5e',
+        shadowColor: '#f43f5e',
+    },
+    actionIconContainer: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 16,
+    },
+    actionButtonText: {
+        color: 'white',
+        fontWeight: '900',
+        fontSize: 18,
+        letterSpacing: 1,
+    },
+    statusIndicator: {
+        marginTop: 12,
+        backgroundColor: 'rgba(0,0,0,0.25)',
+        paddingHorizontal: 12,
+        paddingVertical: 5,
+        borderRadius: 10,
+    },
+    activeText: {
+        color: 'rgba(255,255,255,1)',
+        fontSize: 11,
+        fontWeight: '900',
+    },
+    lockText: {
+        color: 'rgba(255,255,255,0.6)',
+        fontSize: 9,
+        fontWeight: '800',
+        textAlign: 'center',
+        letterSpacing: 0.5,
+    },
+    disabledButton: {
+        opacity: 0.4,
+        backgroundColor: '#1e293b',
+    },
+    historyButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(30, 41, 59, 0.4)',
+        paddingVertical: 20,
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.05)',
+        marginVertical: 20,
+    },
+    historyText: {
+        color: '#94a3b8',
+        fontWeight: '800',
+        fontSize: 14,
+        marginLeft: 12,
+        letterSpacing: 1,
     },
     disabledHistory: {
         opacity: 0.5,
-    },
-    lockText: {
-        color: '#64748b',
-        fontSize: 10,
-        fontWeight: '700',
-        marginTop: 4,
-        letterSpacing: 1,
     },
 });
 
