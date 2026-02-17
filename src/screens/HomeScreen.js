@@ -54,7 +54,12 @@ const HomeScreen = ({ route, navigation }) => {
     const [location, setLocation] = useState(null);
     const [wifiConnected, setWifiConnected] = useState(false);
     const [wifiInfo, setWifiInfo] = useState({ ssid: '', bssid: '', strength: -50 });
-    const [analytics, setAnalytics] = useState({ today_hours: 0, week_total: 0, daily_breakdown: {} });
+    const [analytics, setAnalytics] = useState({
+        today_hours: 0,
+        week_total: 0,
+        daily_breakdown: {},
+        current_status: 'check-out' // Default: can check in
+    });
     const [loadingAnalytics, setLoadingAnalytics] = useState(true);
 
     useEffect(() => {
@@ -242,21 +247,39 @@ const HomeScreen = ({ route, navigation }) => {
             <View style={styles.centerSection}>
                 <View style={styles.buttonRow}>
                     <TouchableOpacity
-                        style={[styles.actionButton, styles.checkInButton, !isOfficeWiFi && styles.disabledButton]}
+                        style={[
+                            styles.actionButton,
+                            styles.checkInButton,
+                            (analytics.current_status === 'check-in' || !isOfficeWiFi) && styles.disabledButton
+                        ]}
                         onPress={() => handleScanPress('check-in')}
+                        disabled={analytics.current_status === 'check-in'}
                     >
                         <Scan size={32} color="white" />
                         <Text style={styles.actionButtonText}>CHECK IN</Text>
-                        {!isOfficeWiFi && <Text style={styles.lockText}>OFFICE ONLY</Text>}
+                        {!isOfficeWiFi ? (
+                            <Text style={styles.lockText}>OFFICE ONLY</Text>
+                        ) : analytics.current_status === 'check-in' && (
+                            <Text style={styles.lockText}>ALREADY IN</Text>
+                        )}
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.actionButton, styles.checkOutButton, !isOfficeWiFi && styles.disabledButton]}
+                        style={[
+                            styles.actionButton,
+                            styles.checkOutButton,
+                            (analytics.current_status === 'check-out' || !isOfficeWiFi) && styles.disabledButton
+                        ]}
                         onPress={() => handleScanPress('check-out')}
+                        disabled={analytics.current_status === 'check-out'}
                     >
                         <LogOut size={32} color="white" />
                         <Text style={styles.actionButtonText}>CHECK OUT</Text>
-                        {!isOfficeWiFi && <Text style={styles.lockText}>OFFICE ONLY</Text>}
+                        {!isOfficeWiFi ? (
+                            <Text style={styles.lockText}>OFFICE ONLY</Text>
+                        ) : analytics.current_status === 'check-out' && (
+                            <Text style={styles.lockText}>ALREADY OUT</Text>
+                        )}
                     </TouchableOpacity>
                 </View>
             </View>
