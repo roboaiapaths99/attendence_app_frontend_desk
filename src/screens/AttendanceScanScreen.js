@@ -1,5 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert, ActivityIndicator, StyleSheet, Animated, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, ActivityIndicator, StyleSheet, Animated, Platform, Dimensions } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Application from 'expo-application';
 import { Scan, XCircle, MapPin, Wifi, ShieldCheck, Eye, Smile } from 'lucide-react-native';
@@ -16,6 +15,9 @@ import AnimatedRe, {
     withTiming,
     interpolate
 } from 'react-native-reanimated';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const RING_SIZE = SCREEN_WIDTH * 0.7;
 
 const AttendanceScanScreen = ({ route, navigation }) => {
     console.log("[AttendanceScan v2] Screen rendering. Params:", route?.params);
@@ -470,27 +472,27 @@ const styles = StyleSheet.create({
     },
     pulseRing: {
         position: 'absolute',
-        width: 288,
-        height: 288,
-        borderRadius: 144,
+        width: RING_SIZE,
+        height: RING_SIZE,
+        borderRadius: RING_SIZE / 2,
         borderWidth: 4,
     },
     ringOuter: {
-        width: 288,
-        height: 288,
+        width: RING_SIZE,
+        height: RING_SIZE,
         borderWidth: 2,
         borderColor: 'rgba(99, 102, 241, 0.4)',
-        borderRadius: 144,
+        borderRadius: RING_SIZE / 2,
         borderStyle: 'dashed',
         alignItems: 'center',
         justifyContent: 'center',
     },
     ringInner: {
-        width: 256,
-        height: 256,
+        width: RING_SIZE * 0.85,
+        height: RING_SIZE * 0.85,
         borderWidth: 4,
         borderColor: '#10b981',
-        borderRadius: 128,
+        borderRadius: (RING_SIZE * 0.85) / 2,
         alignItems: 'center',
         justifyContent: 'center',
         opacity: 0.4,

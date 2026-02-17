@@ -2,9 +2,13 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { theme } from '../utils/theme';
 
-const GlassCard = ({ children, style }) => {
+const GlassCard = ({ children, style, padding }) => {
     return (
-        <View style={[styles.card, style]}>
+        <View style={[
+            styles.card,
+            padding !== undefined && { padding },
+            style
+        ]}>
             {children}
         </View>
     );

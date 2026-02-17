@@ -3,7 +3,7 @@ import axios from 'axios';
 // IMPORTANT: Change this to your computer's local IP address for testing on a real device.
 // You can find your IP by running 'ipconfig' in PowerShell and looking for IPv4 Address.
 // For emulators on the same machine, use 'localhost' or '10.0.2.2' (Android Emulator).
-const API_BASE_URL = 'http://192.168.1.6:8001';
+const API_BASE_URL = 'https://roboaiapaths99-officeflow-backend.hf.space';
 
 const api = axios.create({
     baseURL: API_BASE_URL,

@@ -180,42 +180,60 @@ const HomeScreen = ({ route, navigation }) => {
             <View style={styles.analyticsSection}>
                 <GlassCard style={styles.analyticsCard}>
                     <View style={styles.analyticsHeader}>
-                        <ClockIcon size={18} color="#6366f1" />
-                        <Text style={styles.analyticsTitle}>Daily Progress</Text>
+                        <View style={styles.headerTitleRow}>
+                            <ClockIcon size={18} color="#6366f1" />
+                            <Text style={styles.analyticsTitle}>DAILY PROGRESS</Text>
+                        </View>
+                        <Text style={styles.goalText}>Goal: 8.0 hrs</Text>
                     </View>
                     <View style={styles.analyticsContent}>
                         <ProgressRing
                             progress={Math.min(100, (analytics.today_hours / 8) * 100)}
-                            size={100}
+                            size={width > 380 ? 90 : 80}
                             strokeWidth={10}
                             color="#6366f1"
                         />
                         <View style={styles.analyticsDetails}>
-                            <Text style={styles.hoursValue}>{analytics.today_hours.toFixed(1)} hrs</Text>
-                            <Text style={styles.hoursLabel}>Worked Today</Text>
-                            <Text style={styles.goalText}>Goal: 8.0 hrs</Text>
+                            <Text style={styles.hoursValue}>{analytics.today_hours.toFixed(1)} <Text style={styles.hoursUnit}>hrs</Text></Text>
+                            <Text style={styles.hoursLabel}>WORKED TODAY</Text>
+                            <View style={[styles.statusBadge, { backgroundColor: analytics.today_hours >= 8 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(99, 102, 241, 0.1)' }]}>
+                                <Text style={[styles.statusBadgeText, { color: analytics.today_hours >= 8 ? '#10b981' : '#6366f1' }]}>
+                                    {analytics.today_hours >= 8 ? 'GOAL REACHED' : 'IN PROGRESS'}
+                                </Text>
+                            </View>
                         </View>
                     </View>
                 </GlassCard>
 
                 <GlassCard style={styles.analyticsCard}>
                     <View style={styles.analyticsHeader}>
-                        <TrendingUp size={18} color="#10b981" />
-                        <Text style={styles.analyticsTitle}>Weekly Total</Text>
+                        <View style={styles.headerTitleRow}>
+                            <TrendingUp size={18} color="#10b981" />
+                            <Text style={styles.analyticsTitle}>WEEKLY TOTAL</Text>
+                        </View>
+                        <Text style={styles.goalText}>This Week</Text>
                     </View>
-                    <View style={styles.weeklyContent}>
-                        <Text style={styles.weeklyValue}>{analytics.week_total.toFixed(1)}</Text>
-                        <Text style={styles.weeklyLabel}>HRS THIS WEEK</Text>
-                        <View style={styles.miniChart}>
-                            {Object.values(analytics.daily_breakdown).slice(-5).map((h, i) => (
-                                <View
-                                    key={i}
-                                    style={[
-                                        styles.chartBar,
-                                        { height: Math.max(4, (h / 8) * 40), backgroundColor: h >= 8 ? '#10b981' : '#6366f1' }
-                                    ]}
-                                />
-                            ))}
+                    <View style={styles.analyticsContent}>
+                        <View style={styles.weeklyValueContainer}>
+                            <Text style={styles.weeklyValue}>{analytics.week_total.toFixed(1)}</Text>
+                            <Text style={styles.weeklyLabel}>TOTAL HOURS</Text>
+                        </View>
+                        <View style={styles.miniChartContainer}>
+                            <View style={styles.miniChart}>
+                                {Object.values(analytics.daily_breakdown).slice(-7).map((h, i) => (
+                                    <View
+                                        key={i}
+                                        style={[
+                                            styles.chartBar,
+                                            {
+                                                height: Math.max(4, (h / 12) * 50),
+                                                backgroundColor: h >= 8 ? '#10b981' : 'rgba(16, 185, 129, 0.3)'
+                                            }
+                                        ]}
+                                    />
+                                ))}
+                            </View>
+                            <Text style={styles.chartLabel}>Last 7 Days</Text>
                         </View>
                     </View>
                 </GlassCard>
@@ -396,77 +414,112 @@ const styles = StyleSheet.create({
         letterSpacing: 0.5,
     },
     analyticsSection: {
-        flexDirection: 'row',
+        flexDirection: 'column',
         gap: 16,
         marginBottom: 32,
     },
     analyticsCard: {
-        flex: 1,
-        padding: 16,
+        padding: 20,
         borderRadius: 24,
     },
     analyticsHeader: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 20,
+    },
+    headerTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 8,
-        marginBottom: 12,
     },
     analyticsTitle: {
         color: '#94a3b8',
         fontSize: 12,
-        fontWeight: '700',
-        letterSpacing: 0.5,
+        fontWeight: '800',
+        letterSpacing: 1,
     },
     analyticsContent: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        justifyContent: 'space-between',
+        gap: 20,
     },
     analyticsDetails: {
         flex: 1,
+        alignItems: 'flex-start',
     },
     hoursValue: {
         color: 'white',
-        fontSize: 20,
-        fontWeight: '800',
+        fontSize: width > 380 ? 32 : 28,
+        fontWeight: '900',
+    },
+    hoursUnit: {
+        fontSize: 14,
+        color: '#64748b',
+        fontWeight: '600',
     },
     hoursLabel: {
         color: '#64748b',
         fontSize: 10,
-        fontWeight: '600',
+        fontWeight: '800',
+        marginTop: -4,
+        letterSpacing: 1,
     },
     goalText: {
         color: '#6366f1',
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: '700',
-        marginTop: 4,
+        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
     },
-    weeklyContent: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: 100,
+    statusBadge: {
+        marginTop: 12,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 10,
+    },
+    statusBadgeText: {
+        fontSize: 10,
+        fontWeight: '800',
+        letterSpacing: 0.5,
+    },
+    weeklyValueContainer: {
+        alignItems: 'flex-start',
     },
     weeklyValue: {
         color: 'white',
-        fontSize: 32,
+        fontSize: width > 380 ? 36 : 32,
         fontWeight: '900',
     },
     weeklyLabel: {
         color: '#94a3b8',
         fontSize: 10,
-        fontWeight: '700',
+        fontWeight: '800',
         letterSpacing: 1,
+        marginTop: -4,
+    },
+    miniChartContainer: {
+        alignItems: 'flex-end',
+        flex: 1,
     },
     miniChart: {
         flexDirection: 'row',
         alignItems: 'flex-end',
-        gap: 4,
-        height: 40,
-        marginTop: 8,
+        gap: 6,
+        height: 50,
     },
     chartBar: {
-        width: 8,
-        borderRadius: 4,
+        width: 10,
+        borderRadius: 5,
+    },
+    chartLabel: {
+        color: '#475569',
+        fontSize: 10,
+        fontWeight: '700',
+        marginTop: 8,
     },
     disabledButton: {
         opacity: 0.5,
