@@ -8,7 +8,17 @@ import * as Location from 'expo-location';
 import * as SecureStore from 'expo-secure-store';
 import NetInfo from '@react-native-community/netinfo';
 import Svg, { Circle, Text as SvgText } from 'react-native-svg';
-import { Scan, Wifi, MapPin, History, LogOut, TrendingUp, User, Clock as ClockIcon } from 'lucide-react-native';
+import { Scan, Wifi, MapPin, History, LogOut, TrendingUp, User, Clock as ClockIcon, RefreshCcw } from 'lucide-react-native';
+import Animated, {
+    FadeInUp,
+    FadeInDown,
+    Layout,
+    useSharedValue,
+    useAnimatedStyle,
+    withSpring,
+    withSequence,
+    withTiming
+} from 'react-native-reanimated';
 
 const { width } = Dimensions.get('window');
 
@@ -61,6 +71,10 @@ const HomeScreen = ({ route, navigation }) => {
         current_status: 'check-out' // Default: can check in
     });
     const [loadingAnalytics, setLoadingAnalytics] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    // Animation values
+    const refreshRotation = useSharedValue(0);
 
     useEffect(() => {
         (async () => {
@@ -102,15 +116,32 @@ const HomeScreen = ({ route, navigation }) => {
     }, []);
 
     const fetchStats = async () => {
+        setIsRefreshing(true);
+        refreshRotation.value = withRepeat(
+            withTiming(360, { duration: 1000 }),
+            -1,
+            false
+        );
+
         try {
             const data = await getAnalytics(email);
             setAnalytics(data);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } catch (err) {
             console.error("Failed to fetch analytics", err);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         } finally {
             setLoadingAnalytics(false);
+            setIsRefreshing(false);
+            refreshRotation.value = withTiming(0);
         }
     };
+
+    const animatedRefreshStyle = useAnimatedStyle(() => {
+        return {
+            transform: [{ rotate: `${refreshRotation.value}deg` }]
+        };
+    });
 
     const isOfficeWiFi = wifiConnected && wifiInfo.ssid === "Airtel_rash_1093";
 
@@ -143,7 +174,10 @@ const HomeScreen = ({ route, navigation }) => {
             <View style={styles.header}>
                 <TouchableOpacity
                     style={styles.profileButton}
-                    onPress={() => navigation.navigate('Profile', { email })}
+                    onPress={() => {
+                        Haptics.selectionAsync();
+                        navigation.navigate('Profile', { email });
+                    }}
                 >
                     <View style={styles.avatarMini}>
                         <User size={18} color="white" />
@@ -153,98 +187,131 @@ const HomeScreen = ({ route, navigation }) => {
                         <Text style={styles.userEmail} numberOfLines={1}>{user?.full_name || email || 'Guest User'}</Text>
                     </View>
                 </TouchableOpacity>
-                <TouchableOpacity
-                    style={styles.logoutButton}
-                    onPress={() => navigation.navigate('Login')}
-                >
-                    <LogOut size={20} color="#f43f5e" />
-                </TouchableOpacity>
+
+                <View style={styles.headerActions}>
+                    <TouchableOpacity
+                        style={styles.iconCircle}
+                        onPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            fetchStats();
+                        }}
+                    >
+                        <Animated.View style={animatedRefreshStyle}>
+                            <RefreshCcw size={20} color="#6366f1" />
+                        </Animated.View>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.logoutButton}
+                        onPress={() => {
+                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                            navigation.navigate('Login');
+                        }}
+                    >
+                        <LogOut size={20} color="#f43f5e" />
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <View style={styles.statsContainer}>
-                <GlassCard style={styles.statCard}>
-                    <View style={[styles.iconBox, { backgroundColor: wifiConnected ? 'rgba(16, 185, 129, 0.1)' : 'rgba(244, 63, 94, 0.1)' }]}>
-                        <Wifi size={24} color={wifiConnected ? "#10b981" : "#f43f5e"} />
-                    </View>
-                    <Text style={styles.statTitle}>WiFi Status</Text>
-                    <Text style={[styles.statSubtitle, { color: wifiConnected ? '#10b981' : '#f43f5e' }]}>
-                        {wifiConnected ? (wifiInfo.ssid || 'Connected') : 'Disconnected'}
-                    </Text>
-                </GlassCard>
-                <GlassCard style={styles.statCard}>
-                    <View style={[styles.iconBox, { backgroundColor: location ? 'rgba(59, 130, 246, 0.1)' : 'rgba(244, 63, 94, 0.1)' }]}>
-                        <MapPin size={24} color={location ? "#3b82f6" : "#f43f5e"} />
-                    </View>
-                    <Text style={styles.statTitle}>GPS Ready</Text>
-                    <Text style={[styles.statSubtitle, { color: location ? '#3b82f6' : '#f43f5e' }]}>
-                        {location ? 'Active' : 'Searching...'}
-                    </Text>
-                </GlassCard>
+                <Animated.View
+                    entering={FadeInUp.delay(100).duration(600)}
+                    style={styles.statCardWrapper}
+                >
+                    <GlassCard style={styles.statCard}>
+                        <View style={[styles.iconBox, { backgroundColor: wifiConnected ? 'rgba(16, 185, 129, 0.1)' : 'rgba(244, 63, 94, 0.1)' }]}>
+                            <Wifi size={24} color={wifiConnected ? "#10b981" : "#f43f5e"} />
+                        </View>
+                        <Text style={styles.statTitle}>WiFi Status</Text>
+                        <Text style={[styles.statSubtitle, { color: wifiConnected ? '#10b981' : '#f43f5e' }]}>
+                            {wifiConnected ? (wifiInfo.ssid || 'Connected') : 'Disconnected'}
+                        </Text>
+                    </GlassCard>
+                </Animated.View>
+
+                <Animated.View
+                    entering={FadeInUp.delay(200).duration(600)}
+                    style={styles.statCardWrapper}
+                >
+                    <GlassCard style={styles.statCard}>
+                        <View style={[styles.iconBox, { backgroundColor: location ? 'rgba(59, 130, 246, 0.1)' : 'rgba(244, 63, 94, 0.1)' }]}>
+                            <MapPin size={24} color={location ? "#3b82f6" : "#f43f5e"} />
+                        </View>
+                        <Text style={styles.statTitle}>GPS Ready</Text>
+                        <Text style={[styles.statSubtitle, { color: location ? '#3b82f6' : '#f43f5e' }]}>
+                            {location ? 'Active' : 'Searching...'}
+                        </Text>
+                    </GlassCard>
+                </Animated.View>
             </View>
 
             <View style={styles.analyticsSection}>
-                <GlassCard style={styles.analyticsCard}>
-                    <View style={styles.analyticsHeader}>
-                        <View style={styles.headerTitleRow}>
-                            <ClockIcon size={18} color="#6366f1" />
-                            <Text style={styles.analyticsTitle}>DAILY PROGRESS</Text>
+                <Animated.View entering={FadeInUp.delay(300).duration(700)}>
+                    <GlassCard style={styles.analyticsCard}>
+                        <View style={styles.analyticsHeader}>
+                            <View style={styles.headerTitleRow}>
+                                <ClockIcon size={18} color="#6366f1" />
+                                <Text style={styles.analyticsTitle}>DAILY PROGRESS</Text>
+                            </View>
+                            <Text style={styles.goalText}>Goal: 8.0 hrs</Text>
                         </View>
-                        <Text style={styles.goalText}>Goal: 8.0 hrs</Text>
-                    </View>
-                    <View style={styles.analyticsContent}>
-                        <ProgressRing
-                            progress={Math.min(100, (analytics.today_hours / 8) * 100)}
-                            size={width > 380 ? 90 : 80}
-                            strokeWidth={10}
-                            color="#6366f1"
-                        />
-                        <View style={styles.analyticsDetails}>
-                            <Text style={styles.hoursValue}>{analytics.today_hours.toFixed(1)} <Text style={styles.hoursUnit}>hrs</Text></Text>
-                            <Text style={styles.hoursLabel}>WORKED TODAY</Text>
-                            <View style={[styles.statusBadge, { backgroundColor: analytics.today_hours >= 8 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(99, 102, 241, 0.1)' }]}>
-                                <Text style={[styles.statusBadgeText, { color: analytics.today_hours >= 8 ? '#10b981' : '#6366f1' }]}>
-                                    {analytics.today_hours >= 8 ? 'GOAL REACHED' : 'IN PROGRESS'}
-                                </Text>
+                        <View style={styles.analyticsContent}>
+                            <ProgressRing
+                                progress={Math.min(100, (analytics.today_hours / 8) * 100)}
+                                size={width > 380 ? 90 : 80}
+                                strokeWidth={10}
+                                color="#6366f1"
+                            />
+                            <View style={styles.analyticsDetails}>
+                                <Text style={styles.hoursValue}>{analytics.today_hours.toFixed(1)} <Text style={styles.hoursUnit}>hrs</Text></Text>
+                                <Text style={styles.hoursLabel}>WORKED TODAY</Text>
+                                <View style={[styles.statusBadge, { backgroundColor: analytics.today_hours >= 8 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(99, 102, 241, 0.1)' }]}>
+                                    <Text style={[styles.statusBadgeText, { color: analytics.today_hours >= 8 ? '#10b981' : '#6366f1' }]}>
+                                        {analytics.today_hours >= 8 ? 'GOAL REACHED' : 'IN PROGRESS'}
+                                    </Text>
+                                </View>
                             </View>
                         </View>
-                    </View>
-                </GlassCard>
+                    </GlassCard>
+                </Animated.View>
 
-                <GlassCard style={styles.analyticsCard}>
-                    <View style={styles.analyticsHeader}>
-                        <View style={styles.headerTitleRow}>
-                            <TrendingUp size={18} color="#10b981" />
-                            <Text style={styles.analyticsTitle}>WEEKLY TOTAL</Text>
-                        </View>
-                        <Text style={styles.goalText}>This Week</Text>
-                    </View>
-                    <View style={styles.analyticsContent}>
-                        <View style={styles.weeklyValueContainer}>
-                            <Text style={styles.weeklyValue}>{analytics.week_total.toFixed(1)}</Text>
-                            <Text style={styles.weeklyLabel}>TOTAL HOURS</Text>
-                        </View>
-                        <View style={styles.miniChartContainer}>
-                            <View style={styles.miniChart}>
-                                {Object.values(analytics.daily_breakdown).slice(-7).map((h, i) => (
-                                    <View
-                                        key={i}
-                                        style={[
-                                            styles.chartBar,
-                                            {
-                                                height: Math.max(4, (h / 12) * 50),
-                                                backgroundColor: h >= 8 ? '#10b981' : 'rgba(16, 185, 129, 0.3)'
-                                            }
-                                        ]}
-                                    />
-                                ))}
+                <Animated.View entering={FadeInUp.delay(400).duration(700)}>
+                    <GlassCard style={styles.analyticsCard}>
+                        <View style={styles.analyticsHeader}>
+                            <View style={styles.headerTitleRow}>
+                                <TrendingUp size={18} color="#10b981" />
+                                <Text style={styles.analyticsTitle}>WEEKLY TOTAL</Text>
                             </View>
-                            <Text style={styles.chartLabel}>Last 7 Days</Text>
+                            <Text style={styles.goalText}>This Week</Text>
                         </View>
-                    </View>
-                </GlassCard>
+                        <View style={styles.analyticsContent}>
+                            <View style={styles.weeklyValueContainer}>
+                                <Text style={styles.weeklyValue}>{analytics.week_total.toFixed(1)}</Text>
+                                <Text style={styles.weeklyLabel}>TOTAL HOURS</Text>
+                            </View>
+                            <View style={styles.miniChartContainer}>
+                                <View style={styles.miniChart}>
+                                    {Object.values(analytics.daily_breakdown).slice(-7).map((h, i) => (
+                                        <View
+                                            key={i}
+                                            style={[
+                                                styles.chartBar,
+                                                {
+                                                    height: Math.max(4, (h / 12) * 50),
+                                                    backgroundColor: h >= 8 ? '#10b981' : 'rgba(16, 185, 129, 0.3)'
+                                                }
+                                            ]}
+                                        />
+                                    ))}
+                                </View>
+                                <Text style={styles.chartLabel}>Last 7 Days</Text>
+                            </View>
+                        </View>
+                    </GlassCard>
+                </Animated.View>
             </View>
 
-            <View style={styles.centerSection}>
+            <Animated.View entering={FadeInDown.delay(500).duration(800)} style={styles.centerSection}>
                 <View style={styles.buttonRow}>
                     <TouchableOpacity
                         style={[
@@ -282,21 +349,24 @@ const HomeScreen = ({ route, navigation }) => {
                         )}
                     </TouchableOpacity>
                 </View>
-            </View>
+            </Animated.View>
 
-            <TouchableOpacity
-                style={[styles.historyButton, !isOfficeWiFi && styles.disabledHistory]}
-                onPress={() => {
-                    if (!isOfficeWiFi) {
-                        Alert.alert("WiFi Restricted", "Attendance logs are only accessible on the Office network.");
-                        return;
-                    }
-                    navigation.navigate('History', { email });
-                }}
-            >
-                <History size={20} color={isOfficeWiFi ? "#94a3b8" : "#475569"} />
-                <Text style={[styles.historyText, !isOfficeWiFi && { color: "#475569" }]}>ATTENDANCE HISTORY</Text>
-            </TouchableOpacity>
+            <Animated.View entering={FadeInDown.delay(600).duration(800)}>
+                <TouchableOpacity
+                    style={[styles.historyButton, !isOfficeWiFi && styles.disabledHistory]}
+                    onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        if (!isOfficeWiFi) {
+                            Alert.alert("WiFi Restricted", "Attendance logs are only accessible on the Office network.");
+                            return;
+                        }
+                        navigation.navigate('History', { email });
+                    }}
+                >
+                    <History size={20} color={isOfficeWiFi ? "#94a3b8" : "#475569"} />
+                    <Text style={[styles.historyText, !isOfficeWiFi && { color: "#475569" }]}>ATTENDANCE HISTORY</Text>
+                </TouchableOpacity>
+            </Animated.View>
         </View>
     );
 };
@@ -350,8 +420,24 @@ const styles = StyleSheet.create({
     },
     logoutButton: {
         backgroundColor: 'rgba(244, 63, 94, 0.1)',
-        padding: 12,
-        borderRadius: 16,
+        padding: 10,
+        borderRadius: 14,
+    },
+    headerActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    iconCircle: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    statCardWrapper: {
+        flex: 1,
     },
     statsContainer: {
         flexDirection: 'row',

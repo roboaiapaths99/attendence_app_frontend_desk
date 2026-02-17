@@ -30,6 +30,9 @@ export const getFriendlyErrorMessage = (error, defaultMsg = "Something went wron
         if (detailStr.includes("wifi signal too weak") || detailStr.includes("signal too weak")) {
             return "WiFi signal is too weak. Please move closer to the router for verification.";
         }
+        if (detailStr.includes("attendance sequence error") || detailStr.includes("already checked")) {
+            return "Sequence Error: You are already marked for this status. Please finish your shift or wait for the next session.";
+        }
 
         // Auth / Login Screen
         if (detailStr.includes("invalid credentials") || detailStr.includes("incorrect password")) {
